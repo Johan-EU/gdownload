@@ -6,6 +6,8 @@
 //
 package main
 
+//go:generate go run gobin.go -init-only -var credentials -o credentials.go credentials.json
+
 import (
 	"context"
 	"encoding/gob"
@@ -33,14 +35,16 @@ import (
 
 // Flags
 var (
-	credentialsFile = flag.String("credentials-file", "credentials.json",
-		"Credentials file from https://console.developers.google.com/")
-	outDir     = flag.String("o", ".", "Output directory")
-	cacheToken = flag.Bool("cachetoken", true, "Cache the OAuth 2.0 token")
-	debug      = flag.Bool("debug", false, "Show HTTP traffic")
+	credentialsFile *string
+	outDir          = flag.String("o", ".", "Output directory")
+	cacheToken      = flag.Bool("cachetoken", false, "Cache the OAuth 2.0 token for later invocations of the program")
+	debug           = flag.Bool("debug", false, "Show HTTP traffic")
 )
 
-var progName string
+var (
+	progName    string
+	credentials []byte
+)
 
 func init() {
 	_, progName = filepath.Split(os.Args[0])
@@ -52,18 +56,27 @@ func init() {
 }
 
 func main() {
+	// Only add flag to specify credentials when it is not embedded
+	if credentials == nil {
+		credentialsFile = flag.String("credentials-file", "",
+			"Credentials file from https://console.developers.google.com/")
+	}
 	flag.Parse()
 	if flag.NArg() == 0 {
 		flag.Usage()
 	}
 	query := flag.Arg(0)
 
-	b, err := ioutil.ReadFile(*credentialsFile)
-	if err != nil {
-		log.Fatalf("Unable to read credentials file: %v", err)
+	if credentials == nil {
+		var err error
+		credentials, err = ioutil.ReadFile(*credentialsFile)
+		if err != nil {
+			log.Fatalf("Unable to read credentials file: %v", err)
+		}
 	}
+
 	// If modifying these scopes, delete your previously saved token.json.
-	config, err := google.ConfigFromJSON(b, gmail.GmailReadonlyScope)
+	config, err := google.ConfigFromJSON(credentials, gmail.GmailReadonlyScope)
 	if err != nil {
 		log.Fatalf("Unable to parse credentials file to config: %v", err)
 	}
@@ -132,7 +145,9 @@ func newOAuthClient(ctx context.Context, config *oauth2.Config) *http.Client {
 	token, err := tokenFromFile(cacheFile)
 	if err != nil {
 		token = tokenFromWeb(ctx, config)
-		saveToken(cacheFile, token)
+		if *cacheToken {
+			saveToken(cacheFile, token)
+		}
 	} else {
 		if *debug {
 			log.Printf("Using cached token %#v from %q", token, cacheFile)

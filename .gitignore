@@ -1,5 +1,7 @@
 /.idea/
 /.project/
 
-/credentials.json
+/credentials*
+
 /gdownload
+
